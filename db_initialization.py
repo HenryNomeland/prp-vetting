@@ -5,7 +5,7 @@ from db_updates import *
 import sys
 import flet as ft
 from pathlib import Path
-import utilities_tab
+from utilities_tab import *
 
 
 # Initializing the database with 3 tables of things that we need to keep track of
@@ -84,6 +84,8 @@ def init_db(page, update_output, util_tab, data_folder="Data", overwrite_db=Fals
             start = foldername[:2]
             if start.isnumeric():
                 foldergroup = f"TD-{start}yo"
+            elif foldername[0] == "c":
+                foldergroup = "SEALS"
             else:
                 foldergroup = f"CP-{start[0]}"
             cursor.execute(

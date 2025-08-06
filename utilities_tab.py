@@ -9,9 +9,26 @@ from db_initialization import init_db
 import pandas as pd
 from add_silence import add_silence
 import filecmp
+from datetime import datetime
+import pytz
+central_timezone = pytz.timezone('America/Chicago')
 
 utility_text = "Utility Outputs:"
-
+timestamp_paths = os.path.join(get_directorypath("X:\\CHILD TD RSCH\\PRP"), "timestamps.txt")
+try:
+    if os.path.exists(timestamp_paths):
+        with open(timestamp_paths, "r") as file:
+            lines = file.readlines()
+            ava_data_time_stamp = lines[0].strip()
+            vetted_data_time_stamp = lines[1].strip()
+    else:
+        with open(timestamp_paths, "x") as file:
+            file.write("Unknown\nUnknown")
+        ava_data_time_stamp = "Unknown"
+        vetted_data_time_stamp = "Unknown"
+except:
+    ava_data_time_stamp = "Unknown"
+    vetted_data_time_stamp = "Unknown"
 
 def create_utilities_tab(page: ft.Page):
 
@@ -33,11 +50,23 @@ def create_utilities_tab(page: ft.Page):
 
     def updateDataClick(e):
         def handle_close(e):
+            lines = []
+            current_time_central = datetime.now(central_timezone)
+            ava_data_time_stamp = current_time_central.strftime("%m-%d-%y")
+            lines.append(ava_data_time_stamp + "\n")
+            lines.append(vetted_data_time_stamp)
+            with open(timestamp_paths, "w") as f:
+                f.writelines(lines)
             page.close(dataClickDialog)
 
         def create_directories(
             source_directory, target_directory, longitudinal_manual=False
         ):
+            if len(re.findall("SEALS", os.path.basename(source_directory))) > 0:
+                longitudinal_manual = True
+                seals = True
+            else:
+                seals = False
             ## step 1 - make sure that all children top-level directories are synced
             sourcedirs = next(os.walk(source_directory))[1]
             targetdirs = next(os.walk(target_directory))[1]
@@ -53,7 +82,7 @@ def create_utilities_tab(page: ft.Page):
                     if (
                         re.fullmatch(r"^[A-Za-z()]+$", directory)
                         and len(re.findall(r"[A-Z]", directory)) >= 2
-                    ):
+                    ) or (re.fullmatch(r"c-\d{2}", directory)):
                         if directory not in targetdirs:
                             update_output(f"\n{directory} copied!")
                             os.makedirs(os.path.join(target_directory, directory))
@@ -78,11 +107,18 @@ def create_utilities_tab(page: ft.Page):
                 for child in next(os.walk(source_directory))[1]:
                     childpath = os.path.join(source_directory, child)
                     if child in target_subdirs:
-                        to_create = [
-                            visit
-                            for visit in next(os.walk(childpath))[1]
-                            if re.findall("Visit|visit", visit)
-                        ]
+                        if seals:
+                            to_create = [
+                                visit
+                                for visit in next(os.walk(childpath))[1]
+                                if re.findall("v", visit)
+                            ]
+                        else:
+                            to_create = [
+                                visit
+                                for visit in next(os.walk(childpath))[1]
+                                if re.findall("Visit|visit", visit)
+                            ]
                         for visit in to_create:
                             visit = re.sub("v", "V", visit)
                             long_dir = os.path.join(
@@ -135,6 +171,11 @@ def create_utilities_tab(page: ft.Page):
             new_directory,
             longitudinal_manual=False,
         ):
+            if len(re.findall("SEALS", os.path.basename(original_directory))) > 0:
+                longitudinal_manual = True
+                seals = True
+            else:
+                seals = False
             child_dict = {}
             with open(
                 os.path.join(
@@ -149,10 +190,13 @@ def create_utilities_tab(page: ft.Page):
                         values = row[1:]
                         child_dict[key] = values
             filecount = 0
+            # Handling the CP folder case
             if (len(re.findall("CP", os.path.basename(original_directory))) > 0) or (
                 longitudinal_manual
             ):
                 for child in next(os.walk(new_directory))[1]:
+                    if (seals) and (child[:2] != "c-"):
+                        continue
                     childpath = os.path.join(new_directory, child)
                     for visit in next(os.walk(childpath))[1]:
                         long_path = os.path.join(childpath, visit, "Long STOCS")
@@ -176,12 +220,17 @@ def create_utilities_tab(page: ft.Page):
                             og_visitpath = os.path.join(
                                 original_directory, child, visit.lower()
                             )
+                        else:
+                            continue
                         sss_list = [
                             directory
                             for directory in next(os.walk(og_visitpath))[1]
                             if re.findall("SSS|sss", directory)
                         ]
-                        visitnum = visit.split(" ")[-1]
+                        if seals:
+                            visitnum = visit.split("v")[-1]
+                        else:
+                            visitnum = visit.split(" ")[-1]
                         child_list = child_dict[child]
                         if not (os.path.isdir(og_stocsvisitpath)):
                             temp_visit = child_list[0] + "v" + visitnum
@@ -300,12 +349,13 @@ def create_utilities_tab(page: ft.Page):
                                             filecount += 1
                                     except ValueError:
                                         update_output(
-                                            f"{child}, {visit}, Value Error in Sampling"
+                                            f"\n{child}, {visit}, Value Error in Sampling"
                                         )
                                         continue
                         else:
                             continue
             else:
+                # Handling the TD Data Case
                 for child in next(os.walk(new_directory))[1]:
                     childpath = os.path.join(new_directory, child)
                     long_path = os.path.join(childpath, "Visit 01", "Long STOCS")
@@ -412,6 +462,16 @@ def create_utilities_tab(page: ft.Page):
             update_output("\nSyncing directories in speech_data-CP1 to AVA...")
             dircount_cp1 = create_directories(
                 get_directorypath(r"Y:\CHILD CP RSCH\SESSION SPEECH RECORDINGS\CP.1"),
+                get_directorypath(r"Y:\CHILD TD RSCH\PRP\Data\CP"),
+            )
+            update_output("\nSyncing directories in speech_data-CP2 to AVA...")
+            dircount_cp2 = create_directories(
+                get_directorypath(r"Y:\CHILD CP RSCH\SESSION SPEECH RECORDINGS\CP.2"),
+                get_directorypath(r"Y:\CHILD TD RSCH\PRP\Data\CP"),
+            )
+            update_output("\nSyncing directories in speech_data-SEALS to AVA...")
+            dircount_seals = create_directories(
+                get_directorypath(r"Y:\CHILD CP RSCH\SESSION SPEECH RECORDINGS\SEALS"),
                 get_directorypath(r"Y:\CHILD TD RSCH\PRP\Data\CP"),
             )
             update_output("\nSyncing directories in speech_data-TD to AVA...")
@@ -545,14 +605,32 @@ def create_utilities_tab(page: ft.Page):
                 ),
                 get_directorypath("Y:\\CHILD TD RSCH\\PRP\\Data\\CP"),
             )
+            filecount_cp2 = create_files(
+                get_directorypath("Y:\\CHILD CP RSCH\\SESSION SPEECH RECORDINGS\\CP.2"),
+                get_directorypath(
+                    "Y:\\CHILD CP RSCH\\SPEECH SAMPLES\\Final perception experiment audio files\\CP2"
+                ),
+                get_directorypath("Y:\\CHILD TD RSCH\\PRP\\Data\\CP"),
+            )
+            filecount_seals = create_files(
+                get_directorypath("Y:\\CHILD CP RSCH\\SESSION SPEECH RECORDINGS\\SEALS"),
+                get_directorypath(
+                    "Y:\\CHILD CP RSCH\\SPEECH SAMPLES\\Final perception experiment audio files\\SEALS"
+                ),
+                get_directorypath("Y:\\CHILD TD RSCH\\PRP\\Data\\CP"),
+            )
             update_output(f"\n{dircount_cp1} new directories from CP1 copied!")
+            update_output(f"\n{dircount_cp2} new directories from CP2 copied!")
+            update_output(f"\n{dircount_seals} new directories from SEALS copied!")
             update_output(f"\n{dircount_td} new directories from TD copied!")
             update_output(f"\n{filecount_cp1} new files from CP1 copied!")
+            update_output(f"\n{filecount_cp2} new files from CP2 copied!")
+            update_output(f"\n{filecount_seals} new files from SEALS copied!")
             update_output(f"\n{filecount_td} new files from TD copied!")
             update_output("\nSyncing database file to AVA file directories...")
             init_db(page, update_output, util_tab, "Data", False)
             update_output("\nDatabase sync complete!")
-            backup_database()
+            # backup_database()
             page.open(
                 ft.AlertDialog(
                     title=ft.Text("AVA data was successfully updated."),
@@ -582,6 +660,13 @@ It is recommended to run this process only when you are sure others are not work
 
     def updateVettedClick(e):
         def handle_close(e):
+            lines = []
+            current_time_central = datetime.now(central_timezone)
+            vetted_data_time_stamp = current_time_central.strftime("%m-%d-%y")
+            lines.append(ava_data_time_stamp + "\n")
+            lines.append(vetted_data_time_stamp)
+            with open(timestamp_paths, "w") as f:
+                f.writelines(lines)
             page.close(vettedClickDialog)
 
         def handle_vettedclick(e):
@@ -657,7 +742,7 @@ It is recommended to run this process only when you are sure others are not work
                     elif not filecmp.cmp(src, dst, shallow=False):
                         shutil.copy(src, dst)
                 except TypeError:
-                    update_output(f"\nWARNING - issue with file (not copied) - {os.path.basename(path)}")
+                    update_output(f"\nFile not copied - {os.path.basename(path)}")
                 count += 1
                 update_output(f"\n{round((count/total)*100, 2)}% {count}/{total} {os.path.basename(path)}")
             ### Delete flagged files from the Vetted Data directory
@@ -730,7 +815,7 @@ It is recommended to run this process only when you are sure others are not work
                 )
             )
             update_output(
-                f"\nTotal number of vetted visits with 14 unflagged files - {count}."
+                f"\nTotal number of vetted files - {count}."
             )
             update_output("\nVetted data folder was successfully updated.")
 
@@ -877,6 +962,7 @@ It is recommended to run this process only when you are sure others are not work
 
     util_buttons = ft.Column(
         [
+            ft.Text(f"AVA Data Last Updated: {ava_data_time_stamp}", weight=ft.FontWeight.BOLD),
             ft.ElevatedButton(
                 content=ft.Container(
                     ft.Text(value="Update AVA Data with New Files and Visits", size=16),
@@ -890,6 +976,7 @@ It is recommended to run this process only when you are sure others are not work
                 ),
                 width=450,
             ),
+            ft.Text(f"Vetted Data Last Updated: {vetted_data_time_stamp}", weight=ft.FontWeight.BOLD),
             ft.ElevatedButton(
                 content=ft.Container(
                     ft.Text(
